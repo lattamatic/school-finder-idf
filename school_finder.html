@@ -443,6 +443,14 @@ button{cursor:pointer;font-family:inherit}
           <button class="pill" data-val="prive_hors_contrat">Hors contrat</button>
         </div>
       </div>
+      <div>
+        <div class="filter-label">Sections</div>
+        <div class="filter-row" id="filter-sections">
+          <button class="pill" data-val="sport">⚽ Sportive</button>
+          <button class="pill" data-val="arts">🎨 Artistique</button>
+          <button class="pill" data-val="international">🌍 Internationale/EU</button>
+        </div>
+      </div>
       <div style="display:flex;gap:12px;align-items:flex-end">
         <div>
           <div class="filter-label">Rayon</div>
@@ -518,7 +526,8 @@ let filters = {
   level: "all",
   secteurs: new Set(["public","prive_sous_contrat"]),
   radius: 2,
-  sort: "score"
+  sort: "score",
+  sections: new Set()  // "sport","arts","international" — empty = no filter
 };
 
 // Onboarding answers
@@ -700,6 +709,12 @@ async function launchApp() {
   else if (ob.secteurs === "all") filters.secteurs = new Set(["public","prive_sous_contrat","prive_hors_contrat"]);
   else filters.secteurs = new Set(["public","prive_sous_contrat"]);
 
+  // Translate priority selections into active filters / sort
+  if (ob.priorities.includes("proximity")) filters.sort = "distance";
+  else if (ob.priorities.includes("results")) filters.sort = "score";
+  const sectionMap = { sport: "sport", arts: "arts", international: "international" };
+  filters.sections = new Set(ob.priorities.filter(p => sectionMap[p]));
+
   syncFilterUI();
   initMap();
   await loadData();
@@ -713,6 +728,10 @@ function syncFilterUI() {
   // Secteur
   document.querySelectorAll("#filter-secteur .pill").forEach(p => {
     p.classList.toggle("active", filters.secteurs.has(p.dataset.val));
+  });
+  // Sections
+  document.querySelectorAll("#filter-sections .pill").forEach(p => {
+    p.classList.toggle("active", filters.sections.has(p.dataset.val));
   });
   // Radius
   document.querySelectorAll("#filter-radius .pill").forEach(p => {
@@ -789,6 +808,12 @@ function applyFilters() {
     }
     // Secteur filter
     if (!filters.secteurs.has(s.secteur)) return false;
+    // Sections filter (multi — school must have ALL selected sections)
+    if (filters.sections.size > 0) {
+      if (filters.sections.has("sport") && !s.section_sport) return false;
+      if (filters.sections.has("arts") && !s.section_arts) return false;
+      if (filters.sections.has("international") && !s.section_internationale && !s.section_europeenne) return false;
+    }
     // Radius filter
     if (filters.radius > 0 && userLocation) {
       const d = haversine(userLocation.lat, userLocation.lon, s.lat, s.lon);
@@ -1456,6 +1481,16 @@ document.querySelectorAll("#filter-secteur .pill").forEach(p => {
       p.classList.add("active"); // don't allow empty
       filters.secteurs.add(p.dataset.val);
     }
+    applyFilters();
+  });
+});
+
+document.querySelectorAll("#filter-sections .pill").forEach(p => {
+  p.addEventListener("click", () => {
+    p.classList.toggle("active");
+    filters.sections = new Set(
+      Array.from(document.querySelectorAll("#filter-sections .pill.active")).map(x => x.dataset.val)
+    );
     applyFilters();
   });
 });
