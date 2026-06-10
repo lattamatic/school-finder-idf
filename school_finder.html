@@ -215,7 +215,7 @@ button{cursor:pointer;font-family:inherit}
 /* ── mobile layout ──────────────────────────────────────── */
 @media (max-width:600px){
   /* Stack: map fills screen, panel slides up from bottom */
-  #app{flex-direction:column}
+  #app{flex-direction:column;overflow:visible}
 
   #left-panel{
     width:100%;
@@ -239,7 +239,7 @@ button{cursor:pointer;font-family:inherit}
     margin:0 auto 12px;
   }
 
-  #map-wrap{height:100vh;width:100%}
+  #map-wrap{height:100vh;width:100%;position:relative;z-index:0}
 
   /* detail panel full-screen on mobile */
   #detail-panel{
