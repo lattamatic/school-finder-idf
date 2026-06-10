@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trouver une école — Île-de-France</title>
+<link rel="stylesheet" href="lib/leaflet.css">
+<style>
+/* ── reset & base ──────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;height:100vh;overflow:hidden}
+a{color:#1a6fc4;text-decoration:none}a:hover{text-decoration:underline}
+button{cursor:pointer;font-family:inherit}
+
+/* ── onboarding overlay ────────────────────────────────── */
+#onboarding{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a4a 0%,#2d4a7a 100%);display:flex;align-items:center;justify-content:center;z-index:2000}
+#onboarding.hidden{display:none}
+.ob-card{background:#fff;border-radius:20px;padding:48px 52px;width:560px;max-width:95vw;box-shadow:0 24px 80px rgba(0,0,0,.35)}
+.ob-progress{display:flex;gap:8px;margin-bottom:32px}
+.ob-dot{height:6px;flex:1;border-radius:3px;background:#e0e0e0;transition:background .3s}
+.ob-dot.active{background:#1a6fc4}
+.ob-dot.done{background:#34a853}
+.ob-step{display:none}
+.ob-step.active{display:block}
+.ob-step h2{font-size:22px;font-weight:700;color:#1a1a1a;margin-bottom:8px;line-height:1.3}
+.ob-step p{color:#666;font-size:15px;margin-bottom:28px}
+.ob-options{display:flex;flex-wrap:wrap;gap:10px}
+.ob-btn{padding:12px 18px;border:2px solid #d0d0d0;border-radius:10px;background:#fff;color:#1a1a1a;font-size:14px;font-weight:500;transition:all .18s;line-height:1.3;text-align:left}
+.ob-btn:hover{border-color:#1a6fc4;color:#1a6fc4;background:#f0f6ff}
+.ob-btn.selected{border-color:#1a6fc4;background:#1a6fc4;color:#fff}
+.ob-btn.multi.selected{border-color:#34a853;background:#34a853;color:#fff}
+.ob-nav{display:flex;justify-content:space-between;align-items:center;margin-top:28px}
+.ob-back{background:none;border:none;color:#888;font-size:14px;padding:8px 0}
+.ob-back:hover{color:#1a1a1a}
+.ob-next{background:#1a6fc4;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:600;transition:background .18s}
+.ob-next:hover{background:#155a9c}
+.ob-next:disabled{background:#ccc;cursor:not-allowed}
+.ob-start{background:#34a853;color:#fff;border:none;border-radius:10px;padding:14px 36px;font-size:16px;font-weight:700}
+.ob-start:hover{background:#2d9347}
+.ob-hint{font-size:12px;color:#999;margin-top:6px}
+
+/* ── main app layout ───────────────────────────────────── */
+#app{display:flex;height:100vh;overflow:hidden;position:relative}
+#app.hidden{display:none}
+
+/* ── left panel ────────────────────────────────────────── */
+#left-panel{width:360px;flex-shrink:0;display:flex;flex-direction:column;background:#fff;border-right:1px solid #e5e5e0;overflow:hidden;z-index:10}
+#panel-header{padding:16px 16px 0;border-bottom:1px solid #eee}
+.app-title{font-size:16px;font-weight:700;color:#1a2a4a;display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.app-title span{font-size:20px}
+
+/* address bar with autocomplete */
+#location-wrap{position:relative;margin-bottom:8px}
+#location-bar{display:flex;gap:8px}
+#location-input{flex:1;padding:9px 12px;border:1.5px solid #d0d0d0;border-radius:8px;font-size:13px;outline:none;min-width:0}
+#location-input:focus{border-color:#1a6fc4}
+#location-btn{background:#1a6fc4;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;white-space:nowrap;flex-shrink:0}
+#location-btn:hover{background:#155a9c}
+.geo-btn{background:#fff;border:1.5px solid #d0d0d0;border-radius:8px;padding:9px 10px;font-size:16px;flex-shrink:0}
+.geo-btn:hover{border-color:#1a6fc4}
+#address-suggestions{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#fff;border:1.5px solid #d0e0f8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:100;overflow:hidden;display:none}
+#address-suggestions.open{display:block}
+.addr-item{padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.addr-item:last-child{border-bottom:none}
+.addr-item:hover,.addr-item.focused{background:#f0f6ff}
+.addr-item .addr-icon{color:#1a6fc4;font-size:15px;flex-shrink:0}
+.addr-item .addr-main{font-weight:500;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.addr-item .addr-sub{font-size:11px;color:#888;white-space:nowrap}
+
+/* school name search */
+#search-wrap{position:relative;margin-bottom:12px}
+#school-search{width:100%;padding:8px 32px 8px 32px;border:1.5px solid #d0d0d0;border-radius:8px;font-size:13px;outline:none;background:#f8f8f8}
+#school-search:focus{border-color:#1a6fc4;background:#fff}
+.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#aaa;font-size:14px;pointer-events:none}
+#search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#aaa;font-size:16px;padding:2px 4px;display:none;line-height:1}
+#search-clear:hover{color:#555}
+
+/* filters */
+#filters{padding:12px 16px;border-bottom:1px solid #eee;display:flex;flex-direction:column;gap:8px}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap}
+.filter-label{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.pill{padding:5px 11px;border:1.5px solid #d8d8d8;border-radius:20px;background:#fff;font-size:12px;font-weight:500;color:#444;transition:all .15s}
+.pill:hover{border-color:#1a6fc4;color:#1a6fc4}
+.pill.active{border-color:#1a6fc4;background:#1a6fc4;color:#fff}
+.filter-sort{display:flex;gap:6px;align-items:center}
+.filter-sort label{font-size:12px;color:#666}
+.filter-sort select{border:1.5px solid #d8d8d8;border-radius:6px;padding:4px 8px;font-size:12px;background:#fff;color:#333;outline:none}
+
+/* school list */
+#list-header{padding:10px 16px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+#list-count{font-size:12px;color:#888}
+#school-list{flex:1;overflow-y:auto;padding:4px 8px}
+#school-list::-webkit-scrollbar{width:5px}
+#school-list::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+
+.school-card{padding:12px;border-radius:10px;cursor:pointer;transition:background .15s;border:1.5px solid transparent;margin-bottom:4px}
+.school-card:hover{background:#f5f8ff;border-color:#d0e0f8}
+.school-card.selected{background:#ebf2ff;border-color:#1a6fc4}
+.sc-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.sc-name{font-size:13px;font-weight:600;color:#1a1a1a;line-height:1.3}
+.sc-score{font-size:16px;font-weight:700;flex-shrink:0;min-width:32px;text-align:right}
+.sc-badges{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+.badge{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.badge-public{background:#e3f2fd;color:#1565c0}
+.badge-prive{background:#fff3e0;color:#e65100}
+.badge-hors{background:#fafafa;color:#666;border:1px solid #ddd}
+.badge-level{background:#f3e5f5;color:#6a1b9a}
+.badge-rep{background:#ffebee;color:#c62828}
+.sc-info{display:flex;justify-content:space-between;align-items:center}
+.sc-commune{font-size:11px;color:#888}
+.sc-dist{font-size:11px;color:#888}
+.sc-bar-wrap{margin-top:6px}
+.sc-bar{height:4px;border-radius:2px;background:#e5e5e5;overflow:hidden}
+.sc-bar-fill{height:100%;border-radius:2px;transition:width .3s}
+.empty-state{text-align:center;padding:40px 20px;color:#999}
+.empty-state .emoji{font-size:40px;margin-bottom:12px}
+
+/* ── map ────────────────────────────────────────────────── */
+#map-wrap{flex:1;position:relative;overflow:hidden}
+#map{height:100%;width:100%}
+.map-overlay{position:absolute;z-index:400;pointer-events:none}
+#radius-circle-info{top:12px;left:50%;transform:translateX(-50%);background:rgba(26,111,196,.9);color:#fff;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;display:none}
+#map-hint{bottom:24px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.95);border:1px solid #e0e0e0;padding:8px 16px;border-radius:20px;font-size:12px;color:#555;display:none;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+
+/* ── detail panel ───────────────────────────────────────── */
+#detail-panel{width:380px;flex-shrink:0;background:#fff;border-left:1px solid #e5e5e0;overflow-y:auto;transform:translateX(100%);transition:transform .25s ease;position:absolute;right:0;top:0;bottom:0;z-index:20;box-shadow:-4px 0 20px rgba(0,0,0,.1)}
+#detail-panel.open{transform:translateX(0)}
+#detail-panel::-webkit-scrollbar{width:5px}
+#detail-panel::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+.dp-close{position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;color:#888;z-index:5;padding:4px}
+.dp-close:hover{color:#1a1a1a}
+.dp-header{padding:20px 20px 16px;border-bottom:1px solid #eee}
+.dp-nom{font-size:17px;font-weight:700;color:#1a1a1a;line-height:1.3;margin-bottom:8px;padding-right:28px}
+.dp-badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.dp-adresse{font-size:12px;color:#666;line-height:1.5}
+.dp-contacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.dp-link{font-size:12px;padding:5px 10px;border:1px solid #d0e0f0;border-radius:6px;color:#1a6fc4;display:flex;align-items:center;gap:4px}
+.dp-link:hover{background:#f0f6ff}
+
+.dp-section{padding:16px 20px;border-bottom:1px solid #eee}
+.dp-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#888;margin-bottom:12px}
+
+.score-big{text-align:center;padding:12px 0}
+.score-circle{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:50%;font-size:28px;font-weight:800;margin-bottom:6px;border:4px solid}
+.score-label{font-size:12px;color:#888}
+.score-bars{margin-top:14px}
+.score-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.score-bar-row label{font-size:12px;color:#555;width:130px;flex-shrink:0}
+.score-bar-bg{flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden}
+.score-bar-fg{height:100%;border-radius:4px;transition:width .4s}
+.score-bar-val{font-size:12px;font-weight:700;width:28px;text-align:right;color:#444}
+
+.facts-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fact-item{background:#f8f8f8;border-radius:8px;padding:10px 12px}
+.fact-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.fact-value{font-size:14px;font-weight:600;color:#1a1a1a}
+.fact-value.na{color:#aaa;font-weight:400;font-style:italic}
+
+.result-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.result-row:last-child{border-bottom:none}
+.result-label{font-size:13px;color:#555}
+.result-val{font-size:13px;font-weight:700;color:#1a1a1a}
+
+.va-chip{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700;margin-top:8px}
+.va-pos{background:#e8f5e9;color:#1b5e20}
+.va-neg{background:#ffebee;color:#b71c1c}
+.va-neu{background:#f5f5f5;color:#555}
+
+.extra-tags{display:flex;flex-wrap:wrap;gap:6px}
+.extra-tag{padding:4px 10px;border-radius:10px;font-size:12px;background:#f0f4ff;color:#1a3a7a;border:1px solid #d0daf8}
+
+.carte-sco{padding:12px 14px;border-radius:10px;margin-bottom:4px}
+.carte-sco.assigned{background:#e8f5e9;border:1.5px solid #66bb6a}
+.carte-sco.outside{background:#fff8e1;border:1.5px solid #ffd54f}
+.carte-sco .cs-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.carte-sco .cs-desc{font-size:12px;color:#555;line-height:1.4}
+.demand-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;margin-top:6px}
+.demand-high{background:#ffebee;color:#c62828}
+.demand-med{background:#fff3e0;color:#e65100}
+.demand-low{background:#e8f5e9;color:#1b5e20}
+.disclaimer{font-size:10px;color:#aaa;margin-top:6px;font-style:italic}
+
+.commune-link{display:block;margin-top:10px;padding:8px 14px;background:#1a2a4a;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-align:center}
+.commune-link:hover{background:#2d4a7a;text-decoration:none;color:#fff}
+
+/* ── tooltips & popups ──────────────────────────────────── */
+.leaflet-popup-content-wrapper{border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+.leaflet-popup-content{margin:12px 16px;font-size:13px;line-height:1.5}
+.popup-nom{font-weight:700;margin-bottom:4px;font-size:14px}
+.popup-meta{color:#666;font-size:12px;margin-bottom:6px}
+.popup-score{display:flex;align-items:center;gap:6px}
+.popup-btn{margin-top:8px;display:block;background:#1a6fc4;color:#fff;padding:6px 12px;border-radius:6px;font-size:12px;text-align:center}
+.popup-btn:hover{background:#155a9c;color:#fff;text-decoration:none}
+
+/* ── loading ────────────────────────────────────────────── */
+#loading{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:3000}
+#loading.hidden{display:none}
+.spinner{width:40px;height:40px;border:3px solid #e0e0e0;border-top-color:#1a6fc4;border-radius:50%;animation:spin .8s linear infinite;margin-bottom:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── score colors ───────────────────────────────────────── */
+.s-high{color:#1b5e20}.s-mid-high{color:#388e3c}.s-mid{color:#f57c00}.s-mid-low{color:#e64a19}.s-low{color:#c62828}
+.bg-high{background:#e8f5e9;border-color:#66bb6a}
+.bg-mid-high{background:#f1f8e9;border-color:#9ccc65}
+.bg-mid{background:#fff8e1;border-color:#ffd54f}
+.bg-mid-low{background:#fff3e0;border-color:#ffb74d}
+.bg-low{background:#ffebee;border-color:#ef9a9a}
+.fill-high{background:#4caf50}.fill-mid-high{background:#8bc34a}.fill-mid{background:#ff9800}.fill-mid-low{background:#ff5722}.fill-low{background:#f44336}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#f5f5f0}
+::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+
+/* ── mobile layout ──────────────────────────────────────── */
+@media (max-width:600px){
+  /* Stack: map fills screen, panel slides up from bottom */
+  #app{flex-direction:column}
+
+  #left-panel{
+    width:100%;
+    position:absolute;
+    bottom:0;left:0;right:0;
+    height:55vh;
+    border-right:none;
+    border-top:1px solid #e5e5e0;
+    border-radius:16px 16px 0 0;
+    box-shadow:0 -4px 20px rgba(0,0,0,.12);
+    z-index:30;
+    transform:translateY(calc(100% - 52px)); /* collapsed: show just the handle */
+    transition:transform .3s ease;
+  }
+  #left-panel.mob-open{transform:translateY(0)}
+
+  /* drag handle */
+  #panel-header::before{
+    content:'';display:block;width:36px;height:4px;
+    background:#d0d0d0;border-radius:2px;
+    margin:0 auto 12px;
+  }
+
+  #map-wrap{height:100vh;width:100%}
+
+  /* detail panel full-screen on mobile */
+  #detail-panel{
+    width:100%;
+    left:0;right:0;
+    top:0;bottom:0;
+    transform:translateY(100%);
+    transition:transform .25s ease;
+    border-left:none;
+    z-index:50;
+  }
+  #detail-panel.open{transform:translateY(0)}
+
+  /* mobile view toggle bar */
+  #mob-toggle{
+    display:flex;
+    position:absolute;
+    bottom:64px;
+    left:50%;
+    transform:translateX(-50%);
+    background:#fff;
+    border:1.5px solid #d0d0d0;
+    border-radius:20px;
+    overflow:hidden;
+    z-index:40;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+    transition:bottom .3s ease;
+  }
+  #mob-toggle.panel-open{bottom:calc(55vh + 10px)}
+  .mob-tab{padding:7px 18px;font-size:13px;font-weight:600;color:#666;background:none;border:none;cursor:pointer}
+  .mob-tab.active{background:#1a6fc4;color:#fff}
+
+  /* compact filter on mobile */
+  #filters{padding:8px 12px;gap:6px}
+  .filter-label{font-size:10px}
+  .pill{padding:4px 9px;font-size:11px}
+  .filter-sort select{font-size:11px;padding:3px 6px}
+
+  /* compact header */
+  #panel-header{padding:10px 12px 0}
+  .app-title{font-size:14px;margin-bottom:8px}
+  #location-input{font-size:12px}
+  #location-btn{font-size:12px;padding:8px 10px}
+
+  /* filters toggle button */
+  #mob-filters-toggle{
+    display:flex;align-items:center;gap:6px;
+    background:none;border:1.5px solid #d0d0d0;
+    border-radius:8px;padding:5px 10px;
+    font-size:12px;color:#444;margin-bottom:4px;
+    width:100%;justify-content:center;
+  }
+  #mob-filters-toggle .arrow{transition:transform .2s}
+  #mob-filters-toggle.open .arrow{transform:rotate(180deg)}
+  #filters{display:none}
+  #filters.mob-visible{display:flex}
+
+  /* school list compact */
+  #school-list{padding:2px 6px}
+  .school-card{padding:10px}
+
+  /* address suggestions full width */
+  #address-suggestions{border-radius:8px}
+}
+
+@media (min-width:601px){
+  #mob-toggle{display:none}
+  #mob-filters-toggle{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading" class="hidden">
+  <div class="spinner"></div>
+  <div style="color:#555;font-size:14px">Chargement des établissements...</div>
+</div>
+
+<!-- Onboarding -->
+<div id="onboarding">
+  <div class="ob-card">
+    <div class="ob-progress" id="ob-progress">
+      <div class="ob-dot active" data-step="0"></div>
+      <div class="ob-dot" data-step="1"></div>
+      <div class="ob-dot" data-step="2"></div>
+      <div class="ob-dot" data-step="3"></div>
+    </div>
+
+    <!-- Step 0: level -->
+    <div class="ob-step active" data-step="0">
+      <h2>Quel niveau scolaire cherchez-vous ?</h2>
+      <p>Sélectionnez un niveau pour affiner votre recherche</p>
+      <div class="ob-options">
+        <button class="ob-btn" data-val="maternelle">🌱 Maternelle</button>
+        <button class="ob-btn" data-val="elementaire">📚 Primaire (CP→CM2)</button>
+        <button class="ob-btn" data-val="college">🏫 Collège</button>
+        <button class="ob-btn" data-val="lycee">🎓 Lycée</button>
+        <button class="ob-btn" data-val="all">Tous les niveaux</button>
+      </div>
+    </div>
+
+    <!-- Step 1: use case -->
+    <div class="ob-step" data-step="1">
+      <h2>Vous cherchez près de chez vous, ou explorez une nouvelle zone ?</h2>
+      <p>Cela aidera à centrer la carte sur la bonne zone</p>
+      <div class="ob-options">
+        <button class="ob-btn" data-val="home" style="width:100%">📍 Près de mon adresse actuelle<br><small style="font-weight:400;color:#888">Voir mon école de secteur + alternatives</small></button>
+        <button class="ob-btn" data-val="explore" style="width:100%">🔭 J'explore une nouvelle zone<br><small style="font-weight:400;color:#888">Comparer les établissements avant de déménager</small></button>
+      </div>
+    </div>
+
+    <!-- Step 2: type -->
+    <div class="ob-step" data-step="2">
+      <h2>Quel type d'établissement ?</h2>
+      <p>Vous pourrez modifier ce filtre à tout moment</p>
+      <div class="ob-options">
+        <button class="ob-btn" data-val="public">🏛️ Public uniquement</button>
+        <button class="ob-btn" data-val="public,prive_sous_contrat">🏛️+✝️ Public + Privé sous contrat</button>
+        <button class="ob-btn" data-val="all">Tous types (incl. hors contrat)</button>
+      </div>
+    </div>
+
+    <!-- Step 3: priorities (multi-select) -->
+    <div class="ob-step" data-step="3">
+      <h2>Qu'est-ce qui compte le plus pour vous ?</h2>
+      <p>Sélectionnez jusqu'à 3 priorités</p>
+      <div class="ob-options">
+        <button class="ob-btn multi" data-val="results">📊 Résultats académiques</button>
+        <button class="ob-btn multi" data-val="ips">👥 Profil élèves (mixité sociale)</button>
+        <button class="ob-btn multi" data-val="proximity">🚶 Proximité / à pied</button>
+        <button class="ob-btn multi" data-val="sport">⚽ Section sportive</button>
+        <button class="ob-btn multi" data-val="arts">🎨 Section artistique</button>
+        <button class="ob-btn multi" data-val="international">🌍 Section internationale/européenne</button>
+        <button class="ob-btn multi" data-val="size">👨‍👩‍👧 Petite école</button>
+      </div>
+      <div class="ob-hint">Vous pourrez ajuster ces préférences à tout moment</div>
+    </div>
+
+    <div class="ob-nav">
+      <button class="ob-back" id="ob-back" style="display:none">← Retour</button>
+      <div></div>
+      <button class="ob-next" id="ob-next" disabled>Suivant →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" class="hidden">
+
+  <!-- Mobile map/list toggle -->
+  <div id="mob-toggle">
+    <button class="mob-tab active" id="mob-tab-map" onclick="mobShowMap()">🗺️ Carte</button>
+    <button class="mob-tab" id="mob-tab-list" onclick="mobShowList()">📋 Liste</button>
+  </div>
+
+  <!-- Left Panel -->
+  <div id="left-panel" id="left-panel">
+    <div id="panel-header">
+      <div class="app-title"><span>🏫</span> Trouver une école — IDF</div>
+      <div id="location-wrap">
+        <div id="location-bar">
+          <input type="text" id="location-input" placeholder="Adresse, commune, code postal…" autocomplete="off">
+          <button id="location-btn">Chercher</button>
+          <button class="geo-btn" id="geo-btn" title="Ma position">📍</button>
+        </div>
+        <div id="address-suggestions"></div>
+      </div>
+    </div>
+
+    <button id="mob-filters-toggle" onclick="toggleMobFilters()">
+      Filtres <span class="arrow">▾</span>
+    </button>
+    <div id="filters">
+      <div>
+        <div class="filter-label">Niveau</div>
+        <div class="filter-row" id="filter-level">
+          <button class="pill active" data-val="all">Tous</button>
+          <button class="pill" data-val="maternelle">Maternelle</button>
+          <button class="pill" data-val="elementaire">Primaire</button>
+          <button class="pill" data-val="college">Collège</button>
+          <button class="pill" data-val="lycee">Lycée</button>
+        </div>
+      </div>
+      <div>
+        <div class="filter-label">Type</div>
+        <div class="filter-row" id="filter-secteur">
+          <button class="pill active" data-val="public">Public</button>
+          <button class="pill active" data-val="prive_sous_contrat">Privé s/c</button>
+          <button class="pill" data-val="prive_hors_contrat">Hors contrat</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-end">
+        <div>
+          <div class="filter-label">Rayon</div>
+          <div class="filter-row" id="filter-radius">
+            <button class="pill active" data-val="2">2 km</button>
+            <button class="pill" data-val="5">5 km</button>
+            <button class="pill" data-val="10">10 km</button>
+            <button class="pill" data-val="0">Tout IDF</button>
+          </div>
+        </div>
+        <div class="filter-sort">
+          <label>Trier par</label>
+          <select id="sort-by">
+            <option value="score">Score</option>
+            <option value="distance">Distance</option>
+            <option value="alpha">A–Z</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="search-wrap" style="padding:8px 8px 0">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="school-search" placeholder="Rechercher un établissement…" autocomplete="off">
+      <button id="search-clear">✕</button>
+    </div>
+    <div id="list-header">
+      <span id="list-count">—</span>
+    </div>
+    <div id="school-list"></div>
+  </div>
+
+  <!-- Map -->
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div class="map-overlay" id="radius-circle-info"></div>
+    <div class="map-overlay" id="map-hint"></div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div id="detail-panel">
+    <button class="dp-close" id="dp-close">✕</button>
+    <div id="detail-content"></div>
+  </div>
+
+</div>
+
+<script src="lib/leaflet.js"></script>
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+// Config — change REGION_DEPS to [] to show all of France
+// ────────────────────────────────────────────────────────────────────────────
+const REGION_DEPS = ["75","77","78","91","92","93","94","95"]; // IDF; [] = all
+const COMMUNE_EXPLORER_URL = null; // Set to URL of your commune explorer, e.g. "commune_explorer.html"
+const DATA_FILE = "data/schools.json";
+const DEFAULT_CENTER = [48.8566, 2.3522]; // Paris
+const DEFAULT_ZOOM = 11;
+const GEOCODE_API = "https://api-adresse.data.gouv.fr/search/";
+
+// ────────────────────────────────────────────────────────────────────────────
+// State
+// ────────────────────────────────────────────────────────────────────────────
+let allSchools = [];
+let filteredSchools = [];
+let selectedSchool = null;
+let userLocation = null; // {lat, lon, label}
+let radiusCircle = null;
+let markers = []; // array of L.CircleMarker
+let markerMap = {}; // uai -> marker
+let selectedMarker = null;
+
+let filters = {
+  level: "all",
+  secteurs: new Set(["public","prive_sous_contrat"]),
+  radius: 2,
+  sort: "score"
+};
+
+// Onboarding answers
+let ob = { level:"all", useCase:"home", secteurs:"public,prive_sous_contrat", priorities:[] };
+
+// ────────────────────────────────────────────────────────────────────────────
+// Onboarding
+// ────────────────────────────────────────────────────────────────────────────
+let obStep = 0;
+const OB_STEPS = 4;
+
+document.querySelectorAll(".ob-step .ob-btn:not(.multi)").forEach(btn => {
+  btn.addEventListener("click", () => {
+    btn.closest(".ob-options").querySelectorAll(".ob-btn").forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    document.getElementById("ob-next").disabled = false;
+  });
+});
+
+document.querySelectorAll(".ob-btn.multi").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const sel = btn.closest(".ob-options").querySelectorAll(".ob-btn.selected");
+    if (btn.classList.contains("selected")) {
+      btn.classList.remove("selected");
+    } else if (sel.length < 3) {
+      btn.classList.add("selected");
+    }
+    document.getElementById("ob-next").disabled = false;
+  });
+});
+
+document.getElementById("ob-next").addEventListener("click", () => {
+  const step = document.querySelector(`.ob-step[data-step="${obStep}"]`);
+  // Save answer
+  if (obStep === 3) {
+    ob.priorities = Array.from(step.querySelectorAll(".ob-btn.selected")).map(b => b.dataset.val);
+    launchApp();
+    return;
+  }
+  const sel = step.querySelector(".ob-btn.selected");
+  if (obStep === 0) ob.level = sel?.dataset.val || "all";
+  if (obStep === 1) ob.useCase = sel?.dataset.val || "explore";
+  if (obStep === 2) ob.secteurs = sel?.dataset.val || "public";
+
+  // Change button label on last step
+  if (obStep === 2) {
+    document.getElementById("ob-next").textContent = "Voir les établissements →";
+  }
+
+  obStep++;
+  showObStep(obStep);
+});
+
+document.getElementById("ob-back").addEventListener("click", () => {
+  if (obStep > 0) { obStep--; showObStep(obStep); }
+});
+
+function showObStep(n) {
+  document.querySelectorAll(".ob-step").forEach(s => s.classList.remove("active"));
+  document.querySelector(`.ob-step[data-step="${n}"]`).classList.add("active");
+  document.querySelectorAll(".ob-dot").forEach((d,i) => {
+    d.classList.toggle("active", i === n);
+    d.classList.toggle("done", i < n);
+  });
+  const btn = document.getElementById("ob-next");
+  const stepEl = document.querySelector(`.ob-step[data-step="${n}"]`);
+  btn.disabled = !stepEl.querySelector(".ob-btn.selected");
+  document.getElementById("ob-back").style.display = n > 0 ? "" : "none";
+  if (n < 2) btn.textContent = "Suivant →";
+  if (n === 3) btn.textContent = "Voir les établissements →";
+}
+
+async function launchApp() {
+  document.getElementById("onboarding").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("loading").classList.remove("hidden");
+
+  // Apply onboarding answers to filters
+  filters.level = ob.level;
+  filters.radius = ob.useCase === "home" ? 2 : 5;
+  if (ob.secteurs === "public") filters.secteurs = new Set(["public"]);
+  else if (ob.secteurs === "all") filters.secteurs = new Set(["public","prive_sous_contrat","prive_hors_contrat"]);
+  else filters.secteurs = new Set(["public","prive_sous_contrat"]);
+
+  syncFilterUI();
+  initMap();
+  await loadData();
+}
+
+function syncFilterUI() {
+  // Level
+  document.querySelectorAll("#filter-level .pill").forEach(p => {
+    p.classList.toggle("active", p.dataset.val === filters.level);
+  });
+  // Secteur
+  document.querySelectorAll("#filter-secteur .pill").forEach(p => {
+    p.classList.toggle("active", filters.secteurs.has(p.dataset.val));
+  });
+  // Radius
+  document.querySelectorAll("#filter-radius .pill").forEach(p => {
+    p.classList.toggle("active", String(p.dataset.val) === String(filters.radius));
+  });
+  document.getElementById("sort-by").value = filters.sort;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Map init
+// ────────────────────────────────────────────────────────────────────────────
+let map;
+
+function initMap() {
+  map = L.map("map", { center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 18
+  }).addTo(map);
+
+  map.on("click", e => {
+    // Click on map to set location
+    setUserLocation(e.latlng.lat, e.latlng.lng, "Point sélectionné sur la carte");
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Data loading
+// ────────────────────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const resp = await fetch(DATA_FILE);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    allSchools = await resp.json();
+
+    // Filter by region if configured
+    if (REGION_DEPS.length > 0) {
+      allSchools = allSchools.filter(s => REGION_DEPS.includes(String(s.dep)));
+    }
+
+    document.getElementById("loading").classList.add("hidden");
+    applyFilters();
+
+    // If user chose home, show geocode prompt
+    if (ob.useCase === "home") {
+      document.getElementById("location-input").focus();
+      showMapHint("Entrez votre adresse pour voir votre école de secteur et les alternatives proches");
+    }
+  } catch(e) {
+    document.getElementById("loading").innerHTML = `
+      <div style="text-align:center;padding:40px">
+        <div style="font-size:48px;margin-bottom:16px">⚠️</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">Impossible de charger les données</div>
+        <div style="color:#888;font-size:13px">Vérifiez que schools.json existe dans data/ et que vous utilisez un serveur HTTP</div>
+        <pre style="margin-top:12px;font-size:11px;color:#999">python3 -m http.server 8765</pre>
+      </div>`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Filters & sorting
+// ────────────────────────────────────────────────────────────────────────────
+function applyFilters() {
+  let schools = allSchools.filter(s => {
+    // Name search
+    if (nameQuery && !s.nom.toLowerCase().includes(nameQuery) && !s.commune.toLowerCase().includes(nameQuery)) return false;
+    // Level filter
+    if (filters.level !== "all") {
+      if (filters.level === "elementaire") {
+        if (!["elementaire","primaire"].includes(s.level)) return false;
+      } else if (s.level !== filters.level) return false;
+    }
+    // Secteur filter
+    if (!filters.secteurs.has(s.secteur)) return false;
+    // Radius filter
+    if (filters.radius > 0 && userLocation) {
+      const d = haversine(userLocation.lat, userLocation.lon, s.lat, s.lon);
+      if (d > filters.radius * 1000) return false;
+      s._dist = d;
+    } else if (filters.radius === 0) {
+      s._dist = userLocation ? haversine(userLocation.lat, userLocation.lon, s.lat, s.lon) : null;
+    } else {
+      s._dist = null;
+    }
+    return true;
+  });
+
+  // Sort
+  schools.sort((a, b) => {
+    if (filters.sort === "score") {
+      return (b.score ?? -1) - (a.score ?? -1);
+    } else if (filters.sort === "distance") {
+      return (a._dist ?? Infinity) - (b._dist ?? Infinity);
+    } else {
+      return a.nom.localeCompare(b.nom, "fr");
+    }
+  });
+
+  filteredSchools = schools;
+  renderList();
+  renderMarkers();
+  updateRadiusCircle();
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Map markers
+// ────────────────────────────────────────────────────────────────────────────
+function scoreColor(score) {
+  if (score === null || score === undefined) return "#aaaaaa";
+  if (score >= 7.5) return "#4caf50";
+  if (score >= 5.5) return "#8bc34a";
+  if (score >= 4) return "#ff9800";
+  if (score >= 2.5) return "#ff5722";
+  return "#f44336";
+}
+
+function secteurColor(secteur) {
+  if (secteur === "public") return "#1a6fc4";
+  if (secteur === "prive_sous_contrat") return "#e65100";
+  return "#888888";
+}
+
+function scoreRadius(score) {
+  if (score === null || score === undefined) return 6;
+  return 5 + score * 0.8;
+}
+
+let markerLayer;
+function renderMarkers() {
+  if (!map) return;
+
+  // Remove existing markers efficiently
+  if (markerLayer) markerLayer.clearLayers();
+  markerLayer = L.layerGroup().addTo(map);
+  markerMap = {};
+
+  const limit = 3000; // render cap for performance
+  const toRender = filteredSchools.slice(0, limit);
+
+  toRender.forEach(s => {
+    if (!s.lat || !s.lon) return;
+    const r = scoreRadius(s.score);
+    const color = secteurColor(s.secteur);
+    const fillColor = scoreColor(s.score);
+
+    const m = L.circleMarker([s.lat, s.lon], {
+      radius: r,
+      color: color,
+      weight: 1.5,
+      fillColor: fillColor,
+      fillOpacity: 0.8
+    });
+
+    m.bindPopup(() => buildPopup(s), { maxWidth: 260 });
+    m.on("click", () => {
+      selectSchool(s, m);
+    });
+
+    m.addTo(markerLayer);
+    markerMap[s.uai] = m;
+  });
+
+  // User location marker
+  if (userLocation) {
+    const ul = L.circleMarker([userLocation.lat, userLocation.lon], {
+      radius: 10, color: "#1a2a4a", weight: 3,
+      fillColor: "#fff", fillOpacity: 1
+    }).addTo(markerLayer);
+    ul.bindTooltip(userLocation.label || "Votre position", { permanent: false });
+  }
+}
+
+function buildPopup(s) {
+  const scoreStr = s.score !== undefined && s.score !== null ? s.score.toFixed(1) : "—";
+  const secteurLabel = s.secteur === "public" ? "Public" : s.secteur === "prive_sous_contrat" ? "Privé s/c" : "Hors contrat";
+  const distStr = s._dist ? ` · ${formatDist(s._dist)}` : "";
+  return `<div class="popup-nom">${s.nom}</div>
+    <div class="popup-meta">${levelLabel(s.level)} · ${secteurLabel}${distStr}</div>
+    <div class="popup-score"><span style="color:${scoreColor(s.score)};font-weight:700;font-size:16px">${scoreStr}/10</span>
+    ${s.ips ? `<span style="color:#888;font-size:11px">IPS ${s.ips}</span>` : ""}</div>
+    <a class="popup-btn" href="javascript:void(0)" onclick="selectByUAI('${s.uai}')">Voir le détail →</a>`;
+}
+
+window.selectByUAI = function(uai) {
+  const s = allSchools.find(x => x.uai === uai);
+  if (s) { map.closePopup(); selectSchool(s, markerMap[uai]); }
+};
+
+function selectSchool(s, marker) {
+  selectedSchool = s;
+  // Highlight in list
+  document.querySelectorAll(".school-card").forEach(c => {
+    c.classList.toggle("selected", c.dataset.uai === s.uai);
+  });
+  // Scroll card into view
+  const card = document.querySelector(`.school-card[data-uai="${s.uai}"]`);
+  if (card) card.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  // Open detail panel
+  openDetailPanel(s);
+  // On mobile: switch back to map so user sees the detail panel slide up over it
+  if (isMobile()) setTimeout(() => mobShowMap(), 80);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// School list
+// ────────────────────────────────────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById("school-list");
+  const count = filteredSchools.length;
+  document.getElementById("list-count").textContent =
+    count === 0 ? "Aucun établissement" :
+    count === 1 ? "1 établissement" :
+    `${count.toLocaleString("fr")} établissements`;
+
+  if (count === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="emoji">🏫</div><p>Aucun établissement ne correspond à vos filtres.</p></div>`;
+    return;
+  }
+
+  const cap = 200;
+  const html = filteredSchools.slice(0, cap).map(s => buildCard(s)).join("");
+  list.innerHTML = html + (count > cap ? `<div style="text-align:center;padding:12px;color:#888;font-size:12px">+${(count-cap).toLocaleString("fr")} établissements non affichés — affinez les filtres</div>` : "");
+
+  list.querySelectorAll(".school-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const s = filteredSchools.find(x => x.uai === card.dataset.uai);
+      if (!s) return;
+      const m = markerMap[s.uai];
+      if (m) { map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14)); m.openPopup(); }
+      selectSchool(s, m);
+    });
+  });
+}
+
+function buildCard(s) {
+  const scoreStr = s.score !== undefined && s.score !== null ? s.score.toFixed(1) : "—";
+  const sc = scoreClass(s.score);
+  const fillCls = scoreFillClass(s.score);
+  const pct = s.score !== null && s.score !== undefined ? (s.score / 10 * 100) : 0;
+  const secteurBadge = s.secteur === "public"
+    ? `<span class="badge badge-public">Public</span>`
+    : s.secteur === "prive_sous_contrat"
+    ? `<span class="badge badge-prive">Privé s/c</span>`
+    : `<span class="badge badge-hors">Hors contrat</span>`;
+  const levelBadge = `<span class="badge badge-level">${levelLabel(s.level)}</span>`;
+  const repBadge = s.rep ? `<span class="badge badge-rep">REP</span>` : "";
+  const distStr = s._dist ? formatDist(s._dist) : "";
+
+  return `<div class="school-card" data-uai="${s.uai}">
+    <div class="sc-header">
+      <div class="sc-name">${s.nom}</div>
+      <div class="sc-score ${sc}">${scoreStr}</div>
+    </div>
+    <div class="sc-badges">${secteurBadge}${levelBadge}${repBadge}</div>
+    <div class="sc-info">
+      <span class="sc-commune">${s.commune}</span>
+      ${distStr ? `<span class="sc-dist">${distStr}</span>` : ""}
+    </div>
+    ${s.ips ? `<div class="sc-bar-wrap"><div style="font-size:10px;color:#aaa;margin-bottom:2px">IPS ${s.ips}</div></div>` : ""}
+    <div class="sc-bar-wrap"><div class="sc-bar"><div class="sc-bar-fill ${fillCls}" style="width:${pct}%"></div></div></div>
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Detail panel
+// ────────────────────────────────────────────────────────────────────────────
+function openDetailPanel(s) {
+  const panel = document.getElementById("detail-panel");
+  document.getElementById("detail-content").innerHTML = buildDetailHTML(s);
+  panel.classList.add("open");
+}
+
+document.getElementById("dp-close").addEventListener("click", () => {
+  document.getElementById("detail-panel").classList.remove("open");
+  selectedSchool = null;
+  document.querySelectorAll(".school-card").forEach(c => c.classList.remove("selected"));
+});
+
+function buildDetailHTML(s) {
+  const secteurLabel = s.secteur === "public" ? "Public" : s.secteur === "prive_sous_contrat" ? "Privé sous contrat" : "Hors contrat";
+  const secteurBadge = s.secteur === "public"
+    ? `<span class="badge badge-public">Public</span>`
+    : s.secteur === "prive_sous_contrat"
+    ? `<span class="badge badge-prive">Privé sous contrat</span>`
+    : `<span class="badge badge-hors">Hors contrat</span>`;
+  const levelBadge = `<span class="badge badge-level">${levelLabel(s.level)}</span>`;
+  const repBadge = s.rep ? `<span class="badge badge-rep">${s.rep_label || "REP"}</span>` : "";
+
+  // Contacts
+  let contacts = "";
+  if (s.tel) contacts += `<a class="dp-link" href="tel:${s.tel}">📞 ${s.tel}</a>`;
+  if (s.web) contacts += `<a class="dp-link" href="${s.web.startsWith("http") ? s.web : "http://"+s.web}" target="_blank" rel="noopener">🌐 Site web</a>`;
+  if (s.mail) contacts += `<a class="dp-link" href="mailto:${s.mail}">✉️ Email</a>`;
+  if (s.fiche_onisep) contacts += `<a class="dp-link" href="${s.fiche_onisep}" target="_blank" rel="noopener">📋 ONISEP</a>`;
+
+  // Score section
+  const scoreStr = s.score !== undefined && s.score !== null ? s.score.toFixed(1) : "—";
+  const sc = scoreClass(s.score);
+  const bgCls = scoreBgClass(s.score);
+  const fillCls = scoreFillClass(s.score);
+  const scoreSect = buildScoreSection(s, sc, bgCls, fillCls, scoreStr);
+
+  // Facts
+  const factsSect = buildFactsSection(s, secteurLabel);
+
+  // Academic results
+  const resultsSect = buildResultsSection(s);
+
+  // Extracurriculars
+  const extraSect = buildExtrasSection(s);
+
+  // Carte scolaire
+  const carteSect = buildCarteScolaireSection(s);
+
+  // Commune explorer link
+  const communeLink = COMMUNE_EXPLORER_URL
+    ? `<a class="commune-link" href="${COMMUNE_EXPLORER_URL}?commune=${encodeURIComponent(s.code_commune)}" target="_blank">🗺️ Voir ${s.commune} dans l'explorateur de communes</a>`
+    : "";
+
+  return `
+    <div class="dp-header">
+      <div class="dp-nom">${s.nom}</div>
+      <div class="dp-badges">${levelBadge}${secteurBadge}${repBadge}</div>
+      <div class="dp-adresse">
+        ${[s.adresse, s.code_postal, s.commune].filter(Boolean).join(", ")}
+      </div>
+      ${contacts ? `<div class="dp-contacts">${contacts}</div>` : ""}
+    </div>
+
+    ${scoreSect}
+    ${factsSect}
+    ${resultsSect}
+    ${extraSect}
+    ${carteSect}
+
+    ${communeLink ? `<div style="padding:16px 20px">${communeLink}</div>` : ""}
+  `;
+}
+
+function buildScoreSection(s, sc, bgCls, fillCls, scoreStr) {
+  if (s.score === null || s.score === undefined) {
+    return `<div class="dp-section">
+      <div class="dp-section-title">Score global</div>
+      <div style="color:#aaa;font-size:13px">Score non disponible pour cet établissement</div>
+    </div>`;
+  }
+
+  let subBars = "";
+  if (s.score_ips !== undefined && s.score_ips !== null) {
+    subBars += scoreBarRow("Profil élèves (IPS)", s.score_ips, fillCls);
+  }
+  if (s.score_dnb !== undefined && s.score_dnb !== null) {
+    subBars += scoreBarRow("Résultats DNB", s.score_dnb, fillCls);
+  }
+  if (s.score_mention !== undefined && s.score_mention !== null) {
+    subBars += scoreBarRow("Mentions bac", s.score_mention, fillCls);
+  }
+  if (s.score_va !== undefined && s.score_va !== null) {
+    subBars += scoreBarRow("Valeur ajoutée", s.score_va, fillCls);
+  }
+
+  return `<div class="dp-section">
+    <div class="dp-section-title">Score global</div>
+    <div class="score-big">
+      <div class="score-circle ${bgCls}" style="color:${scoreColor(s.score)}">${scoreStr}</div>
+      <div class="score-label">/ 10 — rang IDF</div>
+    </div>
+    ${subBars ? `<div class="score-bars">${subBars}</div>` : ""}
+    <div style="font-size:10px;color:#bbb;margin-top:10px">Rang percentile parmi les établissements IDF de même type. IPS = profil socio-économique des élèves, pas la qualité intrinsèque de l'école.</div>
+  </div>`;
+}
+
+function scoreBarRow(label, val, fillCls) {
+  const pct = (val / 10 * 100).toFixed(0);
+  return `<div class="score-bar-row">
+    <label>${label}</label>
+    <div class="score-bar-bg"><div class="score-bar-fg ${fillCls}" style="width:${pct}%"></div></div>
+    <span class="score-bar-val">${val.toFixed(1)}</span>
+  </div>`;
+}
+
+function buildFactsSection(s, secteurLabel) {
+  const facts = [];
+  facts.push({ label: "Type", value: secteurLabel });
+  if (s.ips) facts.push({ label: "IPS (profil élèves)", value: `${s.ips} / 160` });
+  if (s.dep) facts.push({ label: "Département", value: depLabel(s.dep) });
+  facts.push({ label: "Restauration", value: s.restauration ? "Oui" : "Non renseigné" });
+  facts.push({ label: "ULIS", value: s.ulis ? "Oui" : "Non" });
+  if (s.secteur === "prive_sous_contrat") {
+    facts.push({ label: "Frais scolaires", value: null, na: "Variable — contacter l'établissement" });
+  }
+  facts.push({ label: "Mercredi école", value: null, na: "Données non disponibles" });
+
+  const rows = facts.map(f => `<div class="fact-item">
+    <div class="fact-label">${f.label}</div>
+    <div class="fact-value ${f.na ? "na" : ""}">${f.value || f.na || "—"}</div>
+  </div>`).join("");
+
+  return `<div class="dp-section">
+    <div class="dp-section-title">Informations pratiques</div>
+    <div class="facts-grid">${rows}</div>
+  </div>`;
+}
+
+function buildResultsSection(s) {
+  const rows = [];
+
+  if (s.level === "college") {
+    if (s.dnb_taux_reussite != null) rows.push({ label:`Taux de réussite DNB (${s.dnb_session||"—"})`, val: `${s.dnb_taux_reussite}%` });
+    if (s.dnb_mention_rate != null) rows.push({ label:"Taux mentions B+TB", val: `${s.dnb_mention_rate}%` });
+    if (!rows.length) return "";
+  } else if (s.level === "lycee") {
+    if (s.lycee_taux_reussite != null) rows.push({ label:`Taux de réussite bac (${s.lycee_annee||"—"})`, val: `${s.lycee_taux_reussite}%` });
+    if (s.lycee_mention_rate != null) rows.push({ label:"Taux mentions B+TB", val: `${s.lycee_mention_rate}%` });
+    if (!rows.length && s.va == null) return "";
+  } else {
+    return ""; // No academic results for primaire
+  }
+
+  const rowsHTML = rows.map(r => `<div class="result-row">
+    <span class="result-label">${r.label}</span>
+    <span class="result-val">${r.val}</span>
+  </div>`).join("");
+
+  let vaHTML = "";
+  if (s.level === "lycee" && s.va != null) {
+    const vaStr = s.va >= 0 ? `+${s.va.toFixed(1)} pt` : `${s.va.toFixed(1)} pt`;
+    const vaCls = s.va > 0.5 ? "va-pos" : s.va < -0.5 ? "va-neg" : "va-neu";
+    const vaDesc = s.va > 0.5
+      ? `${vaStr} au-dessus de l'attendu — lycée plus performant que prévu`
+      : s.va < -0.5
+      ? `${vaStr} en dessous de l'attendu`
+      : `Résultats conformes à l'attendu`;
+    vaHTML = `<div style="margin-top:10px">
+      <div class="va-chip ${vaCls}">${vaStr} valeur ajoutée</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">${vaDesc}</div>
+    </div>`;
+  }
+
+  return `<div class="dp-section">
+    <div class="dp-section-title">Résultats académiques</div>
+    ${rowsHTML}
+    ${vaHTML}
+  </div>`;
+}
+
+function buildExtrasSection(s) {
+  const tags = [];
+  if (s.section_sport) tags.push("⚽ Section sportive");
+  if (s.section_arts) tags.push("🎨 Section arts");
+  if (s.section_internationale) tags.push("🌍 Section internationale");
+  if (s.section_europeenne) tags.push("🇪🇺 Section européenne");
+  if (s.section_cinema) tags.push("🎬 Section cinéma");
+  if (s.section_theatre) tags.push("🎭 Section théâtre");
+  if (s.ulis) tags.push("♿ ULIS");
+  if (s.segpa) tags.push("📘 SEGPA");
+
+  const tagsHTML = tags.length
+    ? `<div class="extra-tags">${tags.map(t => `<span class="extra-tag">${t}</span>`).join("")}</div>`
+    : `<div style="color:#aaa;font-size:12px">Aucune section spécifique recensée dans l'annuaire.</div>`;
+
+  const onisepLink = s.fiche_onisep
+    ? `<a class="dp-link" href="${s.fiche_onisep}" target="_blank" rel="noopener" style="margin-top:10px;display:inline-flex">📋 Voir le profil ONISEP complet</a>`
+    : s.nom && s.commune
+    ? `<a class="dp-link" href="https://www.onisep.fr/recherche?text=${encodeURIComponent(s.nom+' '+s.commune)}" target="_blank" rel="noopener" style="margin-top:10px;display:inline-flex">🔍 Rechercher sur ONISEP</a>`
+    : "";
+
+  return `<div class="dp-section">
+    <div class="dp-section-title">Options & sections</div>
+    ${tagsHTML}
+    ${onisepLink}
+  </div>`;
+}
+
+function buildCarteScolaireSection(s) {
+  const isAssigned = userLocation && isLikelyAssigned(s);
+
+  if (!userLocation) {
+    return `<div class="dp-section">
+      <div class="dp-section-title">Carte scolaire</div>
+      <div class="carte-sco outside">
+        <div class="cs-title">📍 Entrez votre adresse</div>
+        <div class="cs-desc">Entrez votre adresse pour voir si cet établissement est dans votre secteur.</div>
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-top:8px">La sectorisation officielle n'est pas disponible en open data national. Vérifiez sur le site de votre académie.</div>
+    </div>`;
+  }
+
+  if (isAssigned) {
+    return `<div class="dp-section">
+      <div class="dp-section-title">Carte scolaire</div>
+      <div class="carte-sco assigned">
+        <div class="cs-title">✅ Votre école de secteur probable</div>
+        <div class="cs-desc">Cet établissement public est le plus proche de votre adresse pour ce niveau — il est probablement votre école de secteur.</div>
+      </div>
+      <div class="disclaimer">Approximation basée sur la proximité. Vérifiez sur <a href="https://www.education.gouv.fr/annuaire" target="_blank">education.gouv.fr</a> ou auprès de votre mairie.</div>
+    </div>`;
+  }
+
+  // Demand indicator
+  const demand = estimateDemand(s);
+  const demandHTML = s.secteur !== "public" ? "" : `
+    <div class="demand-chip ${demand.cls}">${demand.label}</div>
+    <div class="disclaimer">${demand.desc}</div>`;
+
+  const derogLink = s.secteur === "public" && s.dep
+    ? `<a href="${academieDerogUrl(s.dep)}" target="_blank" rel="noopener" class="dp-link" style="margin-top:8px;display:inline-flex">📄 Procédure de dérogation (académie)</a>`
+    : "";
+
+  return `<div class="dp-section">
+    <div class="dp-section-title">Carte scolaire</div>
+    <div class="carte-sco outside">
+      <div class="cs-title">↗️ Hors de votre secteur probable</div>
+      <div class="cs-desc">Inscription sur dérogation possible selon les places disponibles.</div>
+      ${demandHTML}
+    </div>
+    ${derogLink}
+    <div class="disclaimer" style="margin-top:8px">À titre indicatif — contactez l'établissement ou l'académie pour connaître les places disponibles.</div>
+  </div>`;
+}
+
+function isLikelyAssigned(s) {
+  if (!userLocation || s.secteur !== "public") return false;
+  // Find nearest public school of same level
+  const lvl = s.level;
+  let nearest = null, nearestDist = Infinity;
+  for (const other of allSchools) {
+    if (other.secteur !== "public") continue;
+    if (other.level !== lvl && !(lvl === "elementaire" && other.level === "primaire")) continue;
+    const d = haversine(userLocation.lat, userLocation.lon, other.lat, other.lon);
+    if (d < nearestDist) { nearestDist = d; nearest = other; }
+  }
+  return nearest && nearest.uai === s.uai;
+}
+
+function estimateDemand(s) {
+  // Proxy: IPS relative to IDF median + proximity factor
+  if (!s.ips) return { label:"Demande inconnue", cls:"demand-med", desc:"Données insuffisantes" };
+  const idfMedianIPS = 110; // approximate IDF median
+  if (s.ips > idfMedianIPS + 20) return { label:"Très demandé", cls:"demand-high", desc:"École dans une zone aisée — peu de dérogations accordées" };
+  if (s.ips > idfMedianIPS + 5) return { label:"Demandé", cls:"demand-med", desc:"Demande modérée — quelques places en dérogation possibles" };
+  return { label:"Accessible", cls:"demand-low", desc:"Zone moins tendue — meilleures chances de dérogation" };
+}
+
+function academieDerogUrl(dep) {
+  const d = String(dep).replace(/^0+/, "");
+  if (d === "75") return "https://www.ac-paris.fr/derogation-scolaire-123050";
+  if (["77","91","78","92","93","94","95"].includes(d) || ["078","091","092","093","094","095","077"].includes(dep))
+    return "https://www.ac-versailles.fr/derogation";
+  return "https://www.education.gouv.fr/annuaire";
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Address autocomplete
+// ────────────────────────────────────────────────────────────────────────────
+let acDebounce = null;
+let acFocusIdx = -1;
+let acSuggestions = [];
+
+const locationInput = document.getElementById("location-input");
+const suggestionsEl = document.getElementById("address-suggestions");
+
+locationInput.addEventListener("input", () => {
+  clearTimeout(acDebounce);
+  const q = locationInput.value.trim();
+  if (q.length < 3) { closeSuggestions(); return; }
+  acDebounce = setTimeout(() => fetchSuggestions(q), 220);
+});
+
+locationInput.addEventListener("keydown", e => {
+  const items = suggestionsEl.querySelectorAll(".addr-item");
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    acFocusIdx = Math.min(acFocusIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.classList.toggle("focused", i === acFocusIdx));
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    acFocusIdx = Math.max(acFocusIdx - 1, 0);
+    items.forEach((el, i) => el.classList.toggle("focused", i === acFocusIdx));
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (acFocusIdx >= 0 && acSuggestions[acFocusIdx]) {
+      pickSuggestion(acSuggestions[acFocusIdx]);
+    } else {
+      geocodeInput();
+    }
+  } else if (e.key === "Escape") {
+    closeSuggestions();
+  }
+});
+
+locationInput.addEventListener("blur", () => {
+  setTimeout(closeSuggestions, 150);
+});
+
+document.getElementById("location-btn").addEventListener("click", geocodeInput);
+
+document.getElementById("geo-btn").addEventListener("click", () => {
+  if (!navigator.geolocation) return alert("Géolocalisation non supportée");
+  navigator.geolocation.getCurrentPosition(pos => {
+    setUserLocation(pos.coords.latitude, pos.coords.longitude, "Votre position");
+    locationInput.value = "Ma position actuelle";
+    closeSuggestions();
+  }, () => alert("Impossible d'obtenir votre position"));
+});
+
+async function fetchSuggestions(q) {
+  try {
+    const resp = await fetch(`${GEOCODE_API}?q=${encodeURIComponent(q)}&limit=6&autocomplete=1`);
+    const data = await resp.json();
+    acSuggestions = data.features || [];
+    renderSuggestions(acSuggestions);
+  } catch(e) { closeSuggestions(); }
+}
+
+function renderSuggestions(features) {
+  if (!features.length) { closeSuggestions(); return; }
+  acFocusIdx = -1;
+  suggestionsEl.innerHTML = features.map((f, i) => {
+    const p = f.properties;
+    const icon = p.type === "housenumber" ? "📍" : p.type === "street" ? "🛣️" : p.type === "municipality" ? "🏙️" : "📌";
+    const main = p.label;
+    const sub = p.context || "";
+    return `<div class="addr-item" data-idx="${i}">
+      <span class="addr-icon">${icon}</span>
+      <div style="min-width:0">
+        <div class="addr-main">${main}</div>
+        ${sub ? `<div class="addr-sub">${sub}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  suggestionsEl.querySelectorAll(".addr-item").forEach(el => {
+    el.addEventListener("mousedown", e => {
+      e.preventDefault();
+      pickSuggestion(acSuggestions[Number(el.dataset.idx)]);
+    });
+  });
+  suggestionsEl.classList.add("open");
+}
+
+function pickSuggestion(feat) {
+  const [lon, lat] = feat.geometry.coordinates;
+  const label = feat.properties.label;
+  locationInput.value = label;
+  closeSuggestions();
+  setUserLocation(lat, lon, label);
+}
+
+function closeSuggestions() {
+  suggestionsEl.classList.remove("open");
+  acFocusIdx = -1;
+}
+
+async function geocodeInput() {
+  const q = locationInput.value.trim();
+  if (!q) return;
+  closeSuggestions();
+  try {
+    const resp = await fetch(`${GEOCODE_API}?q=${encodeURIComponent(q)}&limit=1`);
+    const data = await resp.json();
+    if (!data.features?.length) { alert("Adresse introuvable"); return; }
+    pickSuggestion(data.features[0]);
+  } catch(e) {
+    alert("Erreur de géocodage. Vérifiez votre connexion.");
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// School name search
+// ────────────────────────────────────────────────────────────────────────────
+let nameQuery = "";
+
+const schoolSearch = document.getElementById("school-search");
+const searchClear = document.getElementById("search-clear");
+
+schoolSearch.addEventListener("input", () => {
+  nameQuery = schoolSearch.value.trim().toLowerCase();
+  searchClear.style.display = nameQuery ? "block" : "none";
+  applyFilters();
+});
+
+searchClear.addEventListener("click", () => {
+  schoolSearch.value = "";
+  nameQuery = "";
+  searchClear.style.display = "none";
+  schoolSearch.focus();
+  applyFilters();
+});
+
+function setUserLocation(lat, lon, label) {
+  userLocation = { lat, lon, label: label || "" };
+  map.setView([lat, lon], Math.max(map.getZoom(), 13));
+  hideMapHint();
+  applyFilters();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Radius circle
+// ────────────────────────────────────────────────────────────────────────────
+function updateRadiusCircle() {
+  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+  if (!userLocation || filters.radius === 0) return;
+  radiusCircle = L.circle([userLocation.lat, userLocation.lon], {
+    radius: filters.radius * 1000,
+    color: "#1a6fc4", weight: 1.5,
+    fillColor: "#1a6fc4", fillOpacity: 0.05,
+    dashArray: "6 4"
+  }).addTo(map);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Filter UI wiring
+// ────────────────────────────────────────────────────────────────────────────
+document.querySelectorAll("#filter-level .pill").forEach(p => {
+  p.addEventListener("click", () => {
+    document.querySelectorAll("#filter-level .pill").forEach(x => x.classList.remove("active"));
+    p.classList.add("active");
+    filters.level = p.dataset.val;
+    applyFilters();
+  });
+});
+
+document.querySelectorAll("#filter-secteur .pill").forEach(p => {
+  p.addEventListener("click", () => {
+    p.classList.toggle("active");
+    filters.secteurs = new Set(
+      Array.from(document.querySelectorAll("#filter-secteur .pill.active")).map(x => x.dataset.val)
+    );
+    if (filters.secteurs.size === 0) {
+      p.classList.add("active"); // don't allow empty
+      filters.secteurs.add(p.dataset.val);
+    }
+    applyFilters();
+  });
+});
+
+document.querySelectorAll("#filter-radius .pill").forEach(p => {
+  p.addEventListener("click", () => {
+    document.querySelectorAll("#filter-radius .pill").forEach(x => x.classList.remove("active"));
+    p.classList.add("active");
+    filters.radius = Number(p.dataset.val);
+    applyFilters();
+  });
+});
+
+document.getElementById("sort-by").addEventListener("change", e => {
+  filters.sort = e.target.value;
+  applyFilters();
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Utility
+// ────────────────────────────────────────────────────────────────────────────
+function levelLabel(level) {
+  return { maternelle:"Maternelle", elementaire:"Élémentaire", primaire:"Primaire",
+           college:"Collège", lycee:"Lycée" }[level] || level;
+}
+
+function formatDist(m) {
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m/1000).toFixed(1)} km`;
+}
+
+function scoreClass(s) {
+  if (s === null || s === undefined) return "";
+  if (s >= 7.5) return "s-high";
+  if (s >= 5.5) return "s-mid-high";
+  if (s >= 4) return "s-mid";
+  if (s >= 2.5) return "s-mid-low";
+  return "s-low";
+}
+
+function scoreBgClass(s) {
+  if (s === null || s === undefined) return "";
+  if (s >= 7.5) return "bg-high";
+  if (s >= 5.5) return "bg-mid-high";
+  if (s >= 4) return "bg-mid";
+  if (s >= 2.5) return "bg-mid-low";
+  return "bg-low";
+}
+
+function scoreFillClass(s) {
+  if (s === null || s === undefined) return "";
+  if (s >= 7.5) return "fill-high";
+  if (s >= 5.5) return "fill-mid-high";
+  if (s >= 4) return "fill-mid";
+  if (s >= 2.5) return "fill-mid-low";
+  return "fill-low";
+}
+
+function depLabel(dep) {
+  const labels = {
+    "75":"Paris (75)","77":"Seine-et-Marne (77)","78":"Yvelines (78)",
+    "91":"Essonne (91)","92":"Hauts-de-Seine (92)","93":"Seine-Saint-Denis (93)",
+    "94":"Val-de-Marne (94)","95":"Val-d'Oise (95)"
+  };
+  return labels[String(dep).replace(/^0+/,"")] || `Dep. ${dep}`;
+}
+
+function showMapHint(msg) {
+  const el = document.getElementById("map-hint");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", 5000);
+}
+
+function hideMapHint() {
+  document.getElementById("map-hint").style.display = "none";
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Mobile panel behaviour
+// ────────────────────────────────────────────────────────────────────────────
+const isMobile = () => window.innerWidth <= 600;
+
+function mobShowList() {
+  if (!isMobile()) return;
+  document.getElementById("left-panel").classList.add("mob-open");
+  document.getElementById("mob-toggle").classList.add("panel-open");
+  document.getElementById("mob-tab-list").classList.add("active");
+  document.getElementById("mob-tab-map").classList.remove("active");
+  setTimeout(() => map.invalidateSize(), 320);
+}
+
+function mobShowMap() {
+  if (!isMobile()) return;
+  document.getElementById("left-panel").classList.remove("mob-open");
+  document.getElementById("mob-toggle").classList.remove("panel-open");
+  document.getElementById("mob-tab-map").classList.add("active");
+  document.getElementById("mob-tab-list").classList.remove("active");
+  setTimeout(() => map.invalidateSize(), 320);
+}
+
+function toggleMobFilters() {
+  const btn = document.getElementById("mob-filters-toggle");
+  const filters = document.getElementById("filters");
+  const open = btn.classList.toggle("open");
+  filters.classList.toggle("mob-visible", open);
+}
+
+// Panel drag-to-open: tap the handle area on mobile opens the list
+document.getElementById("panel-header").addEventListener("click", () => {
+  if (!isMobile()) return;
+  const panel = document.getElementById("left-panel");
+  if (!panel.classList.contains("mob-open")) mobShowList();
+});
+
+// Invalidate map size after window resize
+window.addEventListener("resize", () => {
+  if (map) setTimeout(() => map.invalidateSize(), 100);
+});
+</script>
+</body>
+</html>
