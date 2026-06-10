@@ -342,13 +342,24 @@ button{cursor:pointer;font-family:inherit}
       </div>
     </div>
 
-    <!-- Step 1: use case -->
+    <!-- Step 1: use case + address -->
     <div class="ob-step" data-step="1">
-      <h2>Vous cherchez près de chez vous, ou explorez une nouvelle zone ?</h2>
+      <h2>Où cherchez-vous ?</h2>
       <p>Cela aidera à centrer la carte sur la bonne zone</p>
       <div class="ob-options">
-        <button class="ob-btn" data-val="home" style="width:100%">📍 Près de mon adresse actuelle<br><small style="font-weight:400;color:#888">Voir mon école de secteur + alternatives</small></button>
-        <button class="ob-btn" data-val="explore" style="width:100%">🔭 J'explore une nouvelle zone<br><small style="font-weight:400;color:#888">Comparer les établissements avant de déménager</small></button>
+        <button class="ob-btn" data-val="home" style="width:100%" id="ob-btn-home">📍 Près de mon adresse<br><small style="font-weight:400;color:#888">Voir mon école de secteur + alternatives proches</small></button>
+        <button class="ob-btn" data-val="explore" style="width:100%">🔭 J'explore une nouvelle zone<br><small style="font-weight:400;color:#888">Parcourir tous les établissements d'IDF</small></button>
+      </div>
+      <div id="ob-address-wrap" style="display:none;margin-top:14px;position:relative">
+        <div style="display:flex;gap:8px">
+          <input type="text" id="ob-address-input" placeholder="Entrez votre adresse…" autocomplete="off"
+            style="flex:1;padding:10px 14px;border:1.5px solid #d0d0d0;border-radius:8px;font-size:14px;outline:none">
+          <button id="ob-geo-btn" title="Ma position" style="background:#fff;border:1.5px solid #d0d0d0;border-radius:8px;padding:10px 12px;font-size:18px;cursor:pointer">📍</button>
+        </div>
+        <div id="ob-suggestions" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #d0e0f8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:10;overflow:hidden"></div>
+        <div id="ob-address-confirm" style="display:none;margin-top:8px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:13px;color:#1b5e20">
+          ✅ <span id="ob-address-label"></span>
+        </div>
       </div>
     </div>
 
@@ -523,6 +534,19 @@ document.querySelectorAll(".ob-step .ob-btn:not(.multi)").forEach(btn => {
   btn.addEventListener("click", () => {
     btn.closest(".ob-options").querySelectorAll(".ob-btn").forEach(b => b.classList.remove("selected"));
     btn.classList.add("selected");
+    // Step 1: show/hide address input
+    if (btn.closest('.ob-step[data-step="1"]')) {
+      const wrap = document.getElementById("ob-address-wrap");
+      if (btn.dataset.val === "home") {
+        wrap.style.display = "block";
+        document.getElementById("ob-address-input").focus();
+        document.getElementById("ob-next").disabled = !obPendingLocation; // need address
+      } else {
+        wrap.style.display = "none";
+        document.getElementById("ob-next").disabled = false;
+      }
+      return;
+    }
     document.getElementById("ob-next").disabled = false;
   });
 });
@@ -539,6 +563,80 @@ document.querySelectorAll(".ob-btn.multi").forEach(btn => {
   });
 });
 
+// ── Onboarding address autocomplete ──────────────────────
+let obPendingLocation = null; // {lat, lon, label} set when user picks an address in onboarding
+let obAcDebounce = null;
+let obAcSuggestions = [];
+
+const obInput = document.getElementById("ob-address-input");
+const obSugg = document.getElementById("ob-suggestions");
+
+obInput.addEventListener("input", () => {
+  clearTimeout(obAcDebounce);
+  obPendingLocation = null;
+  document.getElementById("ob-address-confirm").style.display = "none";
+  document.getElementById("ob-next").disabled = true;
+  const q = obInput.value.trim();
+  if (q.length < 3) { obSugg.style.display = "none"; return; }
+  obAcDebounce = setTimeout(async () => {
+    try {
+      const r = await fetch(`${GEOCODE_API}?q=${encodeURIComponent(q)}&limit=5&autocomplete=1`);
+      const d = await r.json();
+      obAcSuggestions = d.features || [];
+      if (!obAcSuggestions.length) { obSugg.style.display = "none"; return; }
+      obSugg.innerHTML = obAcSuggestions.map((f, i) => {
+        const p = f.properties;
+        return `<div class="addr-item" data-idx="${i}">
+          <span class="addr-icon">${p.type === "municipality" ? "🏙️" : "📍"}</span>
+          <div style="min-width:0">
+            <div class="addr-main">${p.label}</div>
+            ${p.context ? `<div class="addr-sub">${p.context}</div>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+      obSugg.querySelectorAll(".addr-item").forEach(el => {
+        el.addEventListener("mousedown", e => {
+          e.preventDefault();
+          obPickSuggestion(obAcSuggestions[Number(el.dataset.idx)]);
+        });
+      });
+      obSugg.style.display = "block";
+    } catch(e) {}
+  }, 220);
+});
+
+obInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); if (obPendingLocation) document.getElementById("ob-next").click(); }
+  if (e.key === "Escape") obSugg.style.display = "none";
+});
+
+obInput.addEventListener("blur", () => setTimeout(() => obSugg.style.display = "none", 150));
+
+document.getElementById("ob-geo-btn").addEventListener("click", () => {
+  if (!navigator.geolocation) return;
+  document.getElementById("ob-geo-btn").textContent = "⏳";
+  navigator.geolocation.getCurrentPosition(pos => {
+    obPendingLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Ma position actuelle" };
+    obInput.value = "Ma position actuelle";
+    obSugg.style.display = "none";
+    document.getElementById("ob-address-confirm").style.display = "block";
+    document.getElementById("ob-address-label").textContent = "Ma position actuelle";
+    document.getElementById("ob-geo-btn").textContent = "📍";
+    document.getElementById("ob-next").disabled = false;
+  }, () => { document.getElementById("ob-geo-btn").textContent = "📍"; });
+});
+
+function obPickSuggestion(feat) {
+  const [lon, lat] = feat.geometry.coordinates;
+  const label = feat.properties.label;
+  obPendingLocation = { lat, lon, label };
+  obInput.value = label;
+  obSugg.style.display = "none";
+  document.getElementById("ob-address-confirm").style.display = "block";
+  document.getElementById("ob-address-label").textContent = label;
+  document.getElementById("ob-next").disabled = false;
+}
+
 document.getElementById("ob-next").addEventListener("click", () => {
   const step = document.querySelector(`.ob-step[data-step="${obStep}"]`);
   // Save answer
@@ -551,6 +649,7 @@ document.getElementById("ob-next").addEventListener("click", () => {
   if (obStep === 0) ob.level = sel?.dataset.val || "all";
   if (obStep === 1) ob.useCase = sel?.dataset.val || "explore";
   if (obStep === 2) ob.secteurs = sel?.dataset.val || "public";
+  // Step 1 "home" requires address before allowing next — guard already in place
 
   // Change button label on last step
   if (obStep === 2) {
@@ -574,7 +673,12 @@ function showObStep(n) {
   });
   const btn = document.getElementById("ob-next");
   const stepEl = document.querySelector(`.ob-step[data-step="${n}"]`);
-  btn.disabled = !stepEl.querySelector(".ob-btn.selected");
+  // Priorities step (3) is optional; step 1 "home" also requires a location
+  const hasSel = !!stepEl.querySelector(".ob-btn.selected");
+  const selVal = stepEl.querySelector(".ob-btn.selected")?.dataset.val;
+  if (n === 3) btn.disabled = false;
+  else if (n === 1 && selVal === "home") btn.disabled = !obPendingLocation;
+  else btn.disabled = !hasSel;
   document.getElementById("ob-back").style.display = n > 0 ? "" : "none";
   if (n < 2) btn.textContent = "Suivant →";
   if (n === 3) btn.textContent = "Voir les établissements →";
@@ -584,6 +688,10 @@ async function launchApp() {
   document.getElementById("onboarding").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("loading").classList.remove("hidden");
+
+  // Wait for the browser to lay out #app before creating the map
+  // (avoids Leaflet initialising with a zero-size container)
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   // Apply onboarding answers to filters
   filters.level = ob.level;
@@ -648,9 +756,11 @@ async function loadData() {
     document.getElementById("loading").classList.add("hidden");
     applyFilters();
 
-    // If user chose home, show geocode prompt
-    if (ob.useCase === "home") {
-      document.getElementById("location-input").focus();
+    // Apply address collected during onboarding
+    if (ob.useCase === "home" && obPendingLocation) {
+      document.getElementById("location-input").value = obPendingLocation.label;
+      setUserLocation(obPendingLocation.lat, obPendingLocation.lon, obPendingLocation.label);
+    } else if (ob.useCase === "home") {
       showMapHint("Entrez votre adresse pour voir votre école de secteur et les alternatives proches");
     }
   } catch(e) {
@@ -1304,9 +1414,10 @@ searchClear.addEventListener("click", () => {
 
 function setUserLocation(lat, lon, label) {
   userLocation = { lat, lon, label: label || "" };
-  map.setView([lat, lon], Math.max(map.getZoom(), 13));
   hideMapHint();
   applyFilters();
+  // Defer setView so it runs after any pending Leaflet layout/resize
+  setTimeout(() => map.setView([lat, lon], Math.max(map.getZoom(), 13), { animate: true }), 50);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
